@@ -14,44 +14,41 @@
 #
 # See GNU Public License on <http://www.gnu.org/licenses/>.
 
-#CONTRIBUTORS
-
+# CONTRIBUTORS
 # Alexandre Borges (project owner)
 # Corey Forman (https://github.com/digitalsleuth)
 
 # Malwoverview.py: version 4.0.2
 
-import os
-import sys
-import re
-import pefile
-import peutils
-import magic
 import argparse
-import requests
-import hashlib
-import json
-import time
-import validators
-import geocoder
-import threading
-import socket
-import urllib3
-import subprocess
-import types
-import textwrap
 import base64
 import configparser
+import hashlib
+import json
+import os
 import platform
-from operator import itemgetter
-from polyswarm_api.api import PolyswarmAPI
-from urllib.parse import urlparse
-from colorama import init, Fore, Back, Style
+import re
+import socket
+import subprocess
+import sys
+import textwrap
+import threading
+import time
 from datetime import datetime
-from urllib.parse import urlencode, quote_plus
-from urllib.parse import quote
-from requests.exceptions import RetryError
+from itertools import cycle
+from operator import itemgetter
 from pathlib import Path
+from urllib.parse import urlparse
+
+import geocoder
+import magic
+import pefile
+import requests
+import validators
+from colorama import Fore
+from colorama import init
+from polyswarm_api.api import PolyswarmAPI
+from requests.exceptions import RetryError
 
 # On Windows systems, it is necessary to install python-magic-bin: pip install python-magic-bin
 
@@ -67,7 +64,7 @@ param = 'params'
 user_agent = 'Falcon Sandbox'
 urlvt = 'https://www.virustotal.com/vtapi/v2/url/scan'
 ipvt = 'https://www.virustotal.com/vtapi/v2/ip-address/report'
-urlvtreport = 'https://www.virustotal.com/vtapi/v2/url/report' 
+urlvtreport = 'https://www.virustotal.com/vtapi/v2/url/report'
 urlvtdomain = 'https://www.virustotal.com/vtapi/v2/domain/report'
 urlfilevtcheck = 'https://www.virustotal.com/vtapi/v2/file/scan'
 urlmalshare = 'https://malshare.com/api.php?api_key='
@@ -85,67 +82,66 @@ threatcrowdurl = 'https://www.threatcrowd.org/searchApi/v2/'
 
 F = []
 H = []
-final=''
+final = ''
 ffpname2 = ''
 repo2 = ''
 
-class mycolors:
 
-    reset='\033[0m'
-    reverse='\033[07m'
-    bold='\033[01m'
+class mycolors:
+    reset = '\033[0m'
+    reverse = '\033[07m'
+    bold = '\033[01m'
+
     class foreground:
-        orange='\033[33m'
-        blue='\033[34m'
-        purple='\033[35m'
-        lightgreen='\033[92m'
-        lightblue='\033[94m'
-        pink='\033[95m'
-        lightcyan='\033[96m'
-        red='\033[31m'
-        green='\033[32m'
-        cyan='\033[36m'
-        lightgrey='\033[37m'
-        darkgrey='\033[90m'
-        lightred='\033[91m'
-        yellow='\033[93m'
+        orange = '\033[33m'
+        blue = '\033[34m'
+        purple = '\033[35m'
+        lightgreen = '\033[92m'
+        lightblue = '\033[94m'
+        pink = '\033[95m'
+        lightcyan = '\033[96m'
+        red = '\033[31m'
+        green = '\033[32m'
+        cyan = '\033[36m'
+        lightgrey = '\033[37m'
+        darkgrey = '\033[90m'
+        lightred = '\033[91m'
+        yellow = '\033[93m'
+
     class background:
-        black='\033[40m'
-        blue='\033[44m'
-        cyan='\033[46m'
-        lightgrey='\033[47m'
-        purple='\033[45m'
-        green='\033[42m'
-        orange='\033[43m'
-        red='\033[41m'
+        black = '\033[40m'
+        blue = '\033[44m'
+        cyan = '\033[46m'
+        lightgrey = '\033[47m'
+        purple = '\033[45m'
+        green = '\033[42m'
+        orange = '\033[43m'
+        red = '\033[41m'
+
 
 def ftype(filename):
-    type = magic.from_file(filename)
-    return type
+    return magic.from_file(filename)
+
 
 def packed(pe):
     try:
-
         n = 0
-
         for sect in pe.sections:
             if sect.SizeOfRawData == 0:
-                n = n + 1
-            if (sect.get_entropy() < 1 and sect.get_entropy() > 0) or sect.get_entropy() > 7:
-                n = n + 2
-        if n > 2:
-            return True
-        if (n > 0 and n < 3):
-            return "probably packed"
-        else:
+                n += 1
+            entropy = sect.get_entropy()
+            if 0 < entropy < 1 or entropy > 7:
+                n += 2
+            if n > 2:
+                return True
+        if n == 0:
             return False
-
+        return "probably packed"
     except:
         return None
 
 
 def sha256hash(fname):
-
     BSIZE = 65536
     hnd = open(fname, 'rb')
     hash256 = hashlib.sha256()
@@ -158,7 +154,6 @@ def sha256hash(fname):
 
 
 def md5hash(fname):
-
     BSIZE = 65536
     hnd = open(fname, 'rb')
     hashmd5 = hashlib.md5()
@@ -171,165 +166,108 @@ def md5hash(fname):
 
 
 def listexports(fname):
-
     E = []
-    mype2=pefile.PE(fname,fast_load=True)
-    if mype2.OPTIONAL_HEADER.DATA_DIRECTORY[pefile.DIRECTORY_ENTRY['IMAGE_DIRECTORY_ENTRY_EXPORT']].VirtualAddress != 0:
-        mype2.parse_data_directories(directories=[pefile.DIRECTORY_ENTRY['IMAGE_DIRECTORY_ENTRY_EXPORT']])
+    pe_exp = pefile.DIRECTORY_ENTRY['IMAGE_DIRECTORY_ENTRY_EXPORT']
+    mype2 = pefile.PE(fname, fast_load = True)
+    if mype2.OPTIONAL_HEADER.DATA_DIRECTORY[pe_exp].VirtualAddress != 0:
+        mype2.parse_data_directories(directories = [pe_exp])
         for exptab in mype2.DIRECTORY_ENTRY_EXPORT.symbols:
-            x = hex(mype2.OPTIONAL_HEADER.ImageBase + exptab.address), exptab.name
-            E.append(x)
+            E.append((hex(mype2.OPTIONAL_HEADER.ImageBase + exptab.address),
+                      exptab.name))
     return E
 
 
 def listimports(fname):
-
     I = []
-    mype2=pefile.PE(fname,fast_load=True)
-    if mype2.OPTIONAL_HEADER.DATA_DIRECTORY[pefile.DIRECTORY_ENTRY['IMAGE_DIRECTORY_ENTRY_IMPORT']].VirtualAddress != 0:
-        mype2.parse_data_directories(directories=[pefile.DIRECTORY_ENTRY['IMAGE_DIRECTORY_ENTRY_IMPORT']])
+    pe_imp = pefile.DIRECTORY_ENTRY['IMAGE_DIRECTORY_ENTRY_IMPORT']
+    mype2 = pefile.PE(fname, fast_load = True)
+    if mype2.OPTIONAL_HEADER.DATA_DIRECTORY[pe_imp].VirtualAddress != 0:
+        mype2.parse_data_directories(directories = [pe_imp])
         if mype2.DIRECTORY_ENTRY_IMPORT is not None:
             for entry in mype2.DIRECTORY_ENTRY_IMPORT:
                 for imptab in entry.imports:
                     if imptab.name is None:
                         imptab.name = "None"
-                    if imptab.address is None :
-                        imptab.address = int(0) 
-                    x = hex(int(imptab.address)), imptab.name
-                    I.append(x)
+                    if imptab.address is None:
+                        imptab.address = 0
+                    I.append((hex(int(imptab.address)), imptab.name))
     return I
 
 
 def listsections(fname):
-
-    pe=pefile.PE(fname)
-
-    if(windows == 1):
-        print("Sections: ", end='')
-        print("\t\tEntropy\n")
-        for sect in pe.sections:
-            print("%17s" % (sect.Name).decode('utf-8'), end='')
+    pe = pefile.PE(fname)
+    print("Sections: ", end = '')
+    print("\t\tEntropy\n")
+    for sect in pe.sections:
+        print(("%17s" % sect.Name).decode('utf-8'), end = '')
+        if windows == 1:
             print(("\t%5.2f" % sect.get_entropy()))
-    else:
-        print("Sections: ", end='')
-        print("\t\tEntropy\n")
-        for sect in pe.sections:
-            print("%17s" % (sect.Name).decode('utf-8'), end='')
+        else:
             print(("\t\t%5.2f" % sect.get_entropy()))
 
+
 def listdlls(fname):
+    pe = pefile.PE(fname)
 
-    pe=pefile.PE(fname)
-
-    if(bkg == 1):
-        print(mycolors.foreground.lightgreen + "\nImported DLLs: ", end='\n\n')
-        for x in pe.DIRECTORY_ENTRY_IMPORT:
-            print("\t " + mycolors.foreground.lightgreen + x.dll.decode('utf-8') + mycolors.reset)
+    if bkg == 1:
+        color = mycolors.foreground.lightgreen
     else:
-        print(mycolors.foreground.purple + "\nImported DLLs: ", end='\n\n')
-        for x in pe.DIRECTORY_ENTRY_IMPORT:
-            print("\t " + mycolors.foreground.purple + x.dll.decode('utf-8') + mycolors.reset)
+        color = mycolors.foreground.purple
+
+    print(color + "\nImported DLLs: ", end = '\n\n')
+
+    for x in pe.DIRECTORY_ENTRY_IMPORT:
+        print("\t " + color + x.dll.decode('utf-8') + mycolors.reset)
 
 
-def impext(targetfile):
-
+def impext(targetfile, bkg = None):
     print(mycolors.reset)
-
     print(("\nImported Functions".ljust(40)))
-    print((110*'-').ljust(110))
-    IR = []
-    IR = sorted(listimports(targetfile))
-    dic={ }
-    dic = dict(IR)
-    d = iter(list(dic.items()))
-    IX = []
-    for key,value in sorted(d):
-        IX.append(str(value))
-    Y = iter(IX)
+    print((110 * '-').ljust(110))
 
-    for i in Y:
-        if i is None:
-            break
+    if bkg == 1:
+        printing_colors = cycle([
+            mycolors.foreground.lightcyan,
+            mycolors.foreground.lightgreen,
+            mycolors.foreground.yellow
+        ])
+    else:
+        printing_colors = cycle([
+            mycolors.foreground.cyan,
+            mycolors.foreground.green,
+            mycolors.foreground.purple
+        ])
 
-        while (i == 'None'):
-            i = next(Y, None)
+    found_imports = sorted(listimports(targetfile))
 
-        if i is None:
-                break
-        if (bkg == 1):
-            print((mycolors.foreground.lightcyan + "%-40s" % (i)[2:-1]), end=' ')
-        else:
-            print((mycolors.foreground.cyan + "%-40s" % (i)[2:-1]), end=' ')
-        w = next(Y, None)
-        if w is None:
-            break
-        if (w == 'None'):
-            w = next(Y, None)
-        if w is None:
-            break
-        if (bkg == 1):
-            print((mycolors.foreground.lightgreen + "%-40s" % (w)[2:-1]), end=' ')
-        else:
-            print((mycolors.foreground.green + "%-40s" % (w)[2:-1]), end=' ')
-        t = next(Y, None)
-        if t is None:
-            break
-        if (t == 'None'):
-            t = next(Y, None)
-        if t is None:
-            break
-        if (bkg == 1):
-            print((mycolors.foreground.yellow + "%-40s" % (t)[2:-1]))
-        else:
-            print((mycolors.foreground.purple + "%-40s" % (t)[2:-1]))
-    
+    for address, import_name in found_imports:
+        if import_name != "None":
+            color = next(printing_colors)
+            print((color + "%-40s" % (import_name)[2:-1]), end = ' ')
+
     print(mycolors.reset)
-
     print(("\n\nExported Functions".ljust(40)))
-    print((110*'-').ljust(110))
-    ER = []
-    ER = sorted(listexports(targetfile))
-    dic2={ }
-    dic2 = dict(ER)
-    d2 = iter(list(dic2.items()))
-    EX = []
-    for key, value in sorted(d2):
-        EX.append(str(value))
-    Y2 = iter(EX)
-    for i in Y2:
-        if i is None:
-            break
-        while (i == 'None'):
-            i = next(Y2, None)
-        if i is None:
-            break
-        if (bkg == 1):
-            print((mycolors.foreground.yellow + "%-40s" % (i)[2:-1]), end=' ')
-        else:
-            print((mycolors.foreground.purple + "%-40s" % (i)[2:-1]), end=' ')
-        w = next(Y2, None)
-        if w is None:
-            break
-        if (w == 'None'):
-            w = next(Y2, None)
-        if w is None:
-            break
-        if (bkg == 1):
-            print((mycolors.foreground.lightgreen + "%-40s" % (w)[2:-1]), end=' ')
-        else:
-            print((mycolors.foreground.green + "%-40s" % (w)[2:-1]), end=' ')
+    print((110 * '-').ljust(110))
 
-        t = next(Y2, None)
-        if t is None:
-            break
-        if (t == 'None'):
-            t = next(Y2, None)
-        if t is None:
-            break
-        if (bkg == 1):
-            print((mycolors.foreground.lightblue + "%-40s" % (t)[2:-1]))
-        else:
-            print((mycolors.foreground.cyan + "%-40s" % (t)[2:-1]))
+    if bkg == 1:
+        printing_colors = cycle([
+            mycolors.foreground.yellow,
+            mycolors.foreground.lightgreen,
+            mycolors.foreground.lightblue
+        ])
+    else:
+        printing_colors = cycle([
+            mycolors.foreground.purple,
+            mycolors.foreground.green,
+            mycolors.foreground.cyan
+        ])
+
+    found_exports = sorted(listexports(targetfile))
+
+    for address, export_name in found_exports:
+        if export_name != "None":
+            color = next(printing_colors)
+            print((color + "%-40s" % (export_name)[2:-1]), end = ' ')
 
     print(mycolors.reset)
 
